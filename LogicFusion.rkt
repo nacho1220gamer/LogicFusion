@@ -123,19 +123,3 @@
 (define just-scan
   (sllgen:make-string-scanner scanner-spec-simple-interpreter grammar-simple-interpreter))
 
-;El Interpretador (FrontEnd + Evaluación + señal para lectura )
-
-(define interpretador
-  (sllgen:make-rep-loop  "--> "
-    (lambda (pgm) (eval-program  pgm)) 
-    (sllgen:make-stream-parser 
-      scanner-spec-simple-interpreter
-      grammar-simple-interpreter)))
-
-;El Interprete
-(define eval-program
-  (lambda (pgm)
-    (cases program pgm
-      (a-program (globals body)
-                 (eval-expression body (init-env))))))
-
