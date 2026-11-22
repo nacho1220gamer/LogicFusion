@@ -124,6 +124,7 @@
   (sllgen:make-string-scanner scanner-spec-simple-interpreter grammar-simple-interpreter))
 
 
+;******************************************************************************************
 ;Referencias
 
 ;Definición del tipo de dato para referencias
@@ -152,11 +153,104 @@
     (cases reference ref
       (a-ref (pos vec)
              (vector-set! vec pos val)))))
-         
 
 
+;******************************************************************************************
+;Ambientes
+
+;Definición del tipo de dato ambiente
+(define-datatype environment environment?
+  (empty-env-record)
+  (extended-env-record
+   (syms (list-of symbol?))
+   (types (list-of type-exp?))
+   (consts (list-of boolean?))
+   (vec vector?)
+   (env environment?)))
+
+;Ambiente vacío
+(define empty-env
+  (lambda ()
+    (empty-env-record)))
 
 
+;ambiente extendido
+(define extend-env
+  (lambda (syms types consts vals env)
+    (extended-env-record syms types consts (list->vector vals) env)))
+
+;Ambiente extendido recursivo
+(define extend-env-rec
+  (lambda (proc-names idss bodies old-env)
+    (let ((len (length proc-names)))
+      (let ((vec (make-vector len))
+            (types (map (lambda (x) (void-type)) proc-names))
+            (consts (map (lambda (x) #t) proc-names)))
+        (let ((env (extended-env-record proc-names types consts vec old-env)))
+          (for-each
+           (lambda (pos ids body)
+             (vector-set! vec pos (closure ids body env)))
+           (iota len) idss bodies)
+          env)))))
+
+(define iota
+  (lambda (end)
+  (let loop ((next 0))
+    (if (>= next end) '()
+        (cons next (loop (+ 1 next)))))))
+
+;buscar un símbolo en un ambiente
+(define apply-env
+  (lambda (env sym)
+      (deref (apply-env-ref env sym))))
+
+(define apply-env-ref
+  (lambda (env sym)
+    (cases environment env
+      (empty-env-record ()
+                        (eopl:error 'apply-env-ref "Variable no declarada: ~s" sym))
+      (extended-env-record (syms types consts vec env)
+                           (let ((pos (rib-find-position sym syms)))
+                             (if (number? pos)
+                                 (a-ref pos vec)
+                                 (apply-env-ref env sym)))))))
+
+;Consulta de inmutabilidad (const) y tipo registrado en el ambiente
+(define apply-env-const?
+  (lambda (env sym)
+    (cases environment env
+      (empty-env-record ()
+                        (eopl:error 'apply-env-const? "Variable no declarada: ~s" sym))
+      (extended-env-record (syms types consts vec env)
+                           (let ((pos (rib-find-position sym syms)))
+                             (if (number? pos)
+                                 (list-ref consts pos)
+                                 (apply-env-const? env sym)))))))
+
+(define apply-env-type
+  (lambda (env sym)
+    (cases environment env
+      (empty-env-record ()
+                        (eopl:error 'apply-env-type "Variable no declarada: ~s" sym))
+      (extended-env-record (syms types consts vec env)
+                           (let ((pos (rib-find-position sym syms)))
+                             (if (number? pos)
+                                 (list-ref types pos)
+                                 (apply-env-type env sym)))))))
 
 
+;Auxiliares para localizar la posición de un identificador
+(define rib-find-position
+  (lambda (sym los)
+    (list-index (lambda (sym1) (eqv? sym1 sym)) los)))
+
+(define list-index
+  (lambda (pred ls)
+    (cond
+      ((null? ls) #f)
+      ((pred (car ls)) 0)
+      (else (let ((list-index-r (list-index pred (cdr ls))))
+              (if (number? list-index-r)
+                (+ list-index-r 1)
+                #f))))))
 
