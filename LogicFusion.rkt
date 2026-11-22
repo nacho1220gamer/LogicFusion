@@ -80,7 +80,7 @@
   (expression ("while" "(" expression ")" "{" (arbno expression ";") "}") while-exp)
   (expression ("if" "(" expression ")" "{" expression "}" "else" "{" expression "}") if-exp)
   (expression ("switch" identifier "{" (arbno "case" expression ":" "{" expression "}") "default" ":" "{" expression "}" "}") switch-exp)
-  (expression (sat-instance) sat-exp)  
+  (expression (sat-instance) sat-exp)
   (sat-instance ("FNC" number "(" sat-closure (arbno "and" sat-closure)")") sat-fnc)
   (sat-closure ("(" sat-literal (arbno "or" sat-literal)")") sat-and)
   (sat-literal (number) sat-or)
@@ -122,4 +122,41 @@
 
 (define just-scan
   (sllgen:make-string-scanner scanner-spec-simple-interpreter grammar-simple-interpreter))
+
+
+;Referencias
+
+;Definición del tipo de dato para referencias
+(define-datatype reference reference?
+  (a-ref (position integer?)
+         (vec vector?)))
+
+;Desreferenciación
+(define deref
+  (lambda (ref)
+    (primitive-deref ref)))
+
+(define primitive-deref
+  (lambda (ref)
+    (cases reference ref
+      (a-ref (pos vec)
+             (vector-ref vec pos)))))
+
+;Setear valor
+(define setref!
+  (lambda (ref val)
+    (primitive-setref! ref val)))
+
+(define primitive-setref!
+  (lambda (ref val)
+    (cases reference ref
+      (a-ref (pos vec)
+             (vector-set! vec pos val)))))
+         
+
+
+
+
+
+
 
