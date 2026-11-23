@@ -318,7 +318,7 @@
                                                          new-val)
                                                        (eopl:error 'eval-expression
                                                                    "Tipo incompatible en la asignacion de ~s: se esperaba ~s y se recibio ~s"
-                                                                   id (type->symbol var-type) (value->type-symbol new-val)))))
+                                                                   id (type->symbol var-type) (value->type-symbol new-val))))))
                                     (else
                                      (eopl:error 'eval-expression
                                                  "El lado izquierdo de -> debe ser una variable: ~s" exp1))))
