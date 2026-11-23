@@ -360,3 +360,82 @@
   (lambda (type val)
     #t))
 
+
+;******************************************************************************************
+;Pruebas
+
+;Prueba 1: Alcance lexico (GLOBALS -> LOCALS)
+;x toma el valor local (99) y y toma el valor global (20). Retorna 99.
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     int x = 10;
+     const int y = 20;
+   }
+   PROGRAM {
+     proc main() {
+       return LOCALS {
+         int x = 99;
+       } {
+         y;
+         x;
+       }
+     }
+   }"))
+
+;Prueba 2: Mutacion de variables en memoria con el operador ->
+;Modifica la variable global x a 50 y la local z a 30. Retorna 50.
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     int x = 10;
+   }
+   PROGRAM {
+     proc main() {
+       return LOCALS {
+         int z = 5;
+       } {
+         (x -> 50);
+         (z -> 30);
+         x;
+       }
+     }
+   }"))
+
+;Prueba 3 Error esperado: Intentar modificar una variable const con ->
+;Retorna Error: "No se puede modificar la constante: pi"
+#|
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     const float pi = 3.14;
+   }
+   PROGRAM {
+     proc main() {
+       return LOCALS {
+         int a = 1;
+       } {
+         (pi -> 3.15);
+       }
+     }
+   }"))
+|#
+
+;Prueba 4 Error esperado: Consultar una variable no declarada ni en LOCALS ni en GLOBALS
+;Retorna Error: "Variable no declarada: w"
+#|
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     int x = 10;
+   }
+   PROGRAM {
+     proc main() {
+       return LOCALS {
+         int a = 1;
+       } {
+         w;
+       }
+     }
+   }"))
+|#
