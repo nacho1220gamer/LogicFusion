@@ -361,10 +361,57 @@
        (eopl:error 'eval-decl
                    "Declaracion no valida: ~s" decl)))))
 
-;validación temporal
+;******************************************************************************************
+;Sistema de tipos primitivos y validación parcial
+
+;Valida que un valor sea compatible con un tipo declarado.
 (define validate-type
   (lambda (type val)
-    #t))
+    (cases type-exp type
+      (int-type ()    (and (number? val) (exact? val) (integer? val)))
+      (float-type ()  (number? val))
+      (string-type () (string? val))
+      (bool-type ()   (boolean? val))
+      (void-type ()   #t)
+      (sat-type ()    #t)
+      (list-type (t)  #t)
+      (vector-type (t) #t)
+      (dict-type (k v) #t))))
+
+;Si la variable es float y el valor es un número exacto como 20 lo vuelve flotante como 20.0 sino devuelve el mismo valor
+
+(define coerce-value
+  (lambda (type val)
+    (cases type-exp type
+      (float-type ()
+                  (if (and (number? val) (exact? val))
+                      (exact->inexact val)
+                      val))
+      (else val))))
+
+;Nombre legible de un tipo declarado (para mensajes de error)
+(define type->symbol
+  (lambda (type)
+    (cases type-exp type
+      (int-type ()    'int)
+      (float-type ()  'float)
+      (string-type () 'string)
+      (bool-type ()   'bool)
+      (void-type ()   'void)
+      (sat-type ()    'sat)
+      (list-type (t)  'list)
+      (vector-type (t) 'vector)
+      (dict-type (k v) 'dict))))
+
+;Nombre legible del tipo de un valor en ejecución (para mensajes de error)
+(define value->type-symbol
+  (lambda (val)
+    (cond
+      ((boolean? val) 'bool)
+      ((string? val) 'string)
+      ((and (number? val) (exact? val) (integer? val)) 'int)
+      ((number? val) 'float)
+      (else 'otro))))
 
 
 ;******************************************************************************************
