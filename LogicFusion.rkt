@@ -286,6 +286,9 @@
       (text-exp (txt) (substring txt 1 (- (string-length txt) 1)))
       (true-exp () #t)
       (false-exp () #f)
+      (primfun-exp (prim args)
+                   (apply-fun-primitive prim
+                                        (map (lambda (a) (eval-expression a env)) args)))
       (var-exp (id) (apply-env env id))
       (locals-exp (decls exps)
                   (if (null? decls)
@@ -416,6 +419,32 @@
       ((number? val) 'float)
       (else 'otro))))
 
+;Cadenas y salida
+(define value->text
+  (lambda (val)
+    (cond
+      ((eq? val #t) "True")
+      ((eq? val #f) "False")
+      ((string? val) val)
+      ((number? val) (number->string val))
+      (else "<valor>"))))
+
+(define apply-fun-primitive
+  (lambda (prim args)
+    (cases fun-primitive prim
+      (longitud-prim ()
+                     (if (and (= (length args) 1) (string? (car args)))
+                         (string-length (car args))
+                         (eopl:error 'longitud "Espera exactamente una cadena")))
+      (concatenar-prim ()
+                       (if (and (= (length args) 2) (string? (car args)) (string? (cadr args)))
+                           (string-append (car args) (cadr args))
+                           (eopl:error 'concatenar "Espera exactamente 2 cadenas")))
+      (print-prim ()
+                  (begin
+                    (for-each (lambda (a) (display (value->text a))) args)
+                    (newline)
+                    'nulo)))))
 
 ;******************************************************************************************
 ;Pruebas
