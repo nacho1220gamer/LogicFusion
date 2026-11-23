@@ -254,3 +254,88 @@
                 (+ list-index-r 1)
                 #f))))))
 
+
+;Ambinete Inicial
+(define init-env
+  (lambda ()
+    (empty-env)))
+
+
+
+;******************************************************************************************
+;Evaluador
+
+
+;Evaluar programa
+(define eval-program
+  (lambda (pgm)
+    (cases program pgm
+      (a-program (globals body)
+                 (eval-expression body (eval-declarations globals (init-env)))))))
+
+;Evaluar expresión
+(define eval-expression
+  (lambda (exp env)
+    (cases expression exp
+      (lit-exp (datum) datum)
+      (text-exp (txt) txt)
+      (var-exp (id) (apply-env env id))
+      (locals-exp (decls exps)
+                  (if (null? decls)
+                      (eopl:error 'eval-expression
+                                  "LOCALS debe contener al menos una declaracion")
+                      (let ((local-env (eval-declarations decls env)))
+                        (if (null? exps)
+                            (eopl:error 'eval-expression
+                                        "LOCALS debe contener al menos una expresion")
+                            (let loop ((acc (eval-expression (car exps) local-env))
+                                       (exps (cdr exps)))
+                              (if (null? exps)
+                                  acc
+                                  (loop (eval-expression (car exps) local-env)
+                                        (cdr exps))))))))
+      (else
+       (eopl:error 'eval-expression
+                   "Expresion no definida: ~s" exp)))))
+
+;Funciones auxiliares para evaluar declaraciones en GLOBALS y LOCALS
+
+
+;Evaluar declaraciones
+(define eval-declarations
+  (lambda (decls env)
+    (let loop ((decls decls)
+               (env env))
+      (if (null? decls)
+          env
+          (loop (cdr decls)
+                (eval-declaration (car decls) env))))))
+
+
+;Evaluar declaración
+(define eval-declaration
+  (lambda (decl env)
+    (cases expression decl
+      (var-mut (type id exp)
+               (let ((val (eval-expression exp env)))
+                 (if (validate-type type val)
+                     (extend-env (list id) (list type) (list #f) (list val) env)
+                     (eopl:error 'eval-decl
+                                 "Tipo incompatible en la declaracion de ~s" id))))
+      (var-inmut (type id exp)
+                 (let ((val (eval-expression exp env)))
+                   (if (validate-type type val)
+                       (extend-env (list id) (list type) (list #t) (list val) env)
+                       (eopl:error 'eval-decl
+                                   "Tipo incompatible en la declaracion const de ~s" id))))
+      (proc-exp (id types ids body)
+                (extend-env-rec (list id) (list ids) (list body) env))
+      (else
+       (eopl:error 'eval-decl
+                   "Declaracion no valida: ~s" decl)))))
+
+;validación temporal
+(define validate-type
+  (lambda (type val)
+    #t))
+
