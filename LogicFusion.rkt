@@ -55,7 +55,7 @@
   (identifier
    (letter (arbno (or letter digit "?" "_"))) symbol)
   (text
-   ("\"" (or letter "_") (arbno (or letter digit "_" ":")) "\"") string)
+   ("\"" (arbno (not #\")) "\"") string)
   (number
    (digit (arbno digit) "." digit (arbno digit)) number)
   (number
