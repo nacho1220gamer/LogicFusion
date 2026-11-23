@@ -283,7 +283,9 @@
   (lambda (exp env)
     (cases expression exp
       (lit-exp (datum) datum)
-      (text-exp (txt) txt)
+      (text-exp (txt) (substring txt 1 (- (string-length txt) 1)))
+      (true-exp () #t)
+      (false-exp () #f)
       (var-exp (id) (apply-env env id))
       (locals-exp (decls exps)
                   (if (null? decls)
