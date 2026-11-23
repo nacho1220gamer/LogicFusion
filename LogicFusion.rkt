@@ -309,14 +309,16 @@
                                              (if (apply-env-const? env id)
                                                  (eopl:error 'eval-expression
                                                              "No se puede modificar la constante: ~s" id)
-                                                 (let ((new-val (eval-expression exp2 env))
-                                                       (var-type (apply-env-type env id)))
+                                                 (let* ((var-type (apply-env-type env id))
+                                                        (new-val (coerce-value var-type
+                                                                               (eval-expression exp2 env))))
                                                    (if (validate-type var-type new-val)
                                                        (begin
                                                          (setref! (apply-env-ref env id) new-val)
                                                          new-val)
                                                        (eopl:error 'eval-expression
-                                                                   "Tipo incompatible en la asignacion de ~s" id)))))
+                                                                   "Tipo incompatible en la asignacion de ~s: se esperaba ~s y se recibio ~s"
+                                                                   id (type->symbol var-type) (value->type-symbol new-val)))))
                                     (else
                                      (eopl:error 'eval-expression
                                                  "El lado izquierdo de -> debe ser una variable: ~s" exp1))))
