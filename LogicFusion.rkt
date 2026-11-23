@@ -261,7 +261,6 @@
     (empty-env)))
 
 
-
 ;******************************************************************************************
 ;Evaluador
 
@@ -294,6 +293,28 @@
                                   acc
                                   (loop (eval-expression (car exps) local-env)
                                         (cdr exps))))))))
+      (primapp-exp (exp1 prim exp2)
+                   (cases primitive prim
+                     (assign-prim ()
+                                  (cases expression exp1
+                                    (var-exp (id)
+                                             (if (apply-env-const? env id)
+                                                 (eopl:error 'eval-expression
+                                                             "No se puede modificar la constante: ~s" id)
+                                                 (let ((new-val (eval-expression exp2 env))
+                                                       (var-type (apply-env-type env id)))
+                                                   (if (validate-type var-type new-val)
+                                                       (begin
+                                                         (setref! (apply-env-ref env id) new-val)
+                                                         new-val)
+                                                       (eopl:error 'eval-expression
+                                                                   "Tipo incompatible en la asignacion de ~s" id)))))
+                                    (else
+                                     (eopl:error 'eval-expression
+                                                 "El lado izquierdo de -> debe ser una variable: ~s" exp1))))
+                     (else
+                      (eopl:error 'eval-expression
+                                  "Primitiva no encontrada: ~s" prim))))
       (else
        (eopl:error 'eval-expression
                    "Expresion no definida: ~s" exp)))))
