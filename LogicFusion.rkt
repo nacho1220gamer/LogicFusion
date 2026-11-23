@@ -346,22 +346,21 @@
   (lambda (decl env)
     (cases expression decl
       (var-mut (type id exp)
-               (let ((val (eval-expression exp env)))
+               (let ((val (coerce-value type (eval-expression exp env))))
                  (if (validate-type type val)
                      (extend-env (list id) (list type) (list #f) (list val) env)
-                     (eopl:error 'eval-decl
-                                 "Tipo incompatible en la declaracion de ~s" id))))
+                     (eopl:error 'eval-decl "Tipo incompatible en la declaracion de ~s: se esperaba ~s y se recibio ~s"
+                                 id (type->symbol type) (value->type-symbol val)))))
       (var-inmut (type id exp)
-                 (let ((val (eval-expression exp env)))
+                 (let ((val (coerce-value type (eval-expression exp env))))
                    (if (validate-type type val)
                        (extend-env (list id) (list type) (list #t) (list val) env)
-                       (eopl:error 'eval-decl
-                                   "Tipo incompatible en la declaracion const de ~s" id))))
+                       (eopl:error 'eval-decl "Tipo incompatible en la declaracion const de ~s: se esperaba ~s y se recibio ~s"
+                                   id (type->symbol type) (value->type-symbol val)))))
       (proc-exp (id types ids body)
                 (extend-env-rec (list id) (list ids) (list body) env))
       (else
-       (eopl:error 'eval-decl
-                   "Declaracion no valida: ~s" decl)))))
+       (eopl:error 'eval-decl "Declaracion no valida: ~s" decl)))))
 
 ;******************************************************************************************
 ;Sistema de tipos primitivos y validación parcial
