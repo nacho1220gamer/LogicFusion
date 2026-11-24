@@ -72,7 +72,7 @@
   (expression ("True") true-exp)
   (expression ("False") false-exp)
   (expression (fun-primitive "(" (separated-list expression ",") ")") primfun-exp)
-  (expression (identifier) var-exp)
+  (expression (identifier var-prim) var-exp)
   (expression (type-exp identifier "=" expression) var-mut)
   (expression ("const" type-exp identifier "=" expression) var-inmut)
   (expression ("(" expression primitive expression ")") primapp-exp)
@@ -109,7 +109,9 @@
   (type-exp ("sat") sat-type)
   (type-exp ("list" "<" type-exp ">") list-type)
   (type-exp ("vector" "<" type-exp ">") vector-type)
-  (type-exp ("dict" "<" type-exp "," type-exp ">") dict-type))
+  (type-exp ("dict" "<" type-exp "," type-exp ">") dict-type)
+  (var-prim () simple-var)
+  (var-prim ("(" (separated-list expression ",") ")") app-exp))
   )
 
 ;Construidos automáticamente:
@@ -291,7 +293,16 @@
       (primfun-exp (prim args)
                    (apply-fun-primitive prim
                                         (map (lambda (a) (eval-expression a env)) args)))
-      (var-exp (id) (apply-env env id))
+      (var-exp (id v-prim)
+               (cases var-prim v-prim
+                 (simple-var () (apply-env env id))
+                 (app-exp (vals)
+                          (let ((proc (apply-env env id))
+                                (args (eval-rands vals env)))
+                            (if (procval? proc)
+                                (apply-procedure proc args)
+                                (eopl:error 'eval-expression
+                                            "No es un procedimiento ~s" proc))))))
       (locals-exp (decls exps)
                   (if (null? decls)
                       (eopl:error 'eval-expression
@@ -310,7 +321,7 @@
                    (cases primitive prim
                      (assign-prim ()
                                   (cases expression exp1
-                                    (var-exp (id)
+                                    (var-exp (id v-prim)
                                              (if (apply-env-const? env id)
                                                  (eopl:error 'eval-expression
                                                              "No se puede modificar la constante: ~s" id)
@@ -333,6 +344,10 @@
       (else
        (eopl:error 'eval-expression
                    "Expresion no definida: ~s" exp)))))
+
+(define eval-rands
+  (lambda (rands env)
+    (map (lambda (x) (eval-expression x env)) rands)))
 
 ;Funciones auxiliares para evaluar declaraciones en GLOBALS y LOCALS
 
@@ -447,6 +462,22 @@
                     (for-each (lambda (a) (display (value->text a))) args)
                     (newline)
                     'nulo)))))
+;*******************************************************************************************
+;Procedimientos
+(define-datatype procval procval?
+  (closure
+   (ids (list-of symbol?))
+   (body expression?)
+   (env environment?)))
+
+;apply-procedure: evalua el cuerpo de un procedimientos en el ambiente extendido correspondiente
+(define apply-procedure
+  (lambda (proc args)
+    (cases procval proc
+      (closure (ids body env)
+               (let ((types (map (lambda (x) (void-type)) ids))
+                     (consts (map (lambda (x) #f) ids)))
+               (eval-expression body (extend-env ids types consts args env)))))))
 
 ;******************************************************************************************
 ;Pruebas
