@@ -55,7 +55,7 @@
   (identifier
    (letter (arbno (or letter digit "?" "_"))) symbol)
   (text
-   ("\"" (or letter "_") (arbno (or letter digit "_" ":")) "\"") string)
+   ("\"" (arbno (not #\")) "\"") string)
   (number
    (digit (arbno digit) "." digit (arbno digit)) number)
   (number
@@ -69,6 +69,9 @@
 '((program ("GLOBALS" "{" (arbno expression ";") "}" "PROGRAM" "{" "proc" "main" "(" ")" "{" "return" expression "}" "}") a-program)
   (expression (number) lit-exp)
   (expression (text) text-exp)
+  (expression ("True") true-exp)
+  (expression ("False") false-exp)
+  (expression (fun-primitive "(" (separated-list expression ",") ")") primfun-exp)
   (expression (identifier) var-exp)
   (expression (type-exp identifier "=" expression) var-mut)
   (expression ("const" type-exp identifier "=" expression) var-inmut)
@@ -95,6 +98,9 @@
   (primitive (">=") greater-eq-prim)
   (primitive ("<=") less-eq-prim)
   (primitive ("->") assign-prim)
+  (fun-primitive ("longitud") longitud-prim)
+  (fun-primitive ("concatenar") concatenar-prim)
+  (fun-primitive ("print") print-prim)
   (type-exp ("int") int-type)
   (type-exp ("float") float-type)
   (type-exp ("string") string-type)
@@ -193,6 +199,8 @@
            (iota len) idss bodies)
           env)))))
 
+
+
 (define iota
   (lambda (end)
   (let loop ((next 0))
@@ -277,7 +285,12 @@
   (lambda (exp env)
     (cases expression exp
       (lit-exp (datum) datum)
-      (text-exp (txt) txt)
+      (text-exp (txt) (substring txt 1 (- (string-length txt) 1)))
+      (true-exp () #t)
+      (false-exp () #f)
+      (primfun-exp (prim args)
+                   (apply-fun-primitive prim
+                                        (map (lambda (a) (eval-expression a env)) args)))
       (var-exp (id) (apply-env env id))
       (locals-exp (decls exps)
                   (if (null? decls)
@@ -301,14 +314,16 @@
                                              (if (apply-env-const? env id)
                                                  (eopl:error 'eval-expression
                                                              "No se puede modificar la constante: ~s" id)
-                                                 (let ((new-val (eval-expression exp2 env))
-                                                       (var-type (apply-env-type env id)))
+                                                 (let* ((var-type (apply-env-type env id))
+                                                        (new-val (coerce-value var-type
+                                                                               (eval-expression exp2 env))))
                                                    (if (validate-type var-type new-val)
                                                        (begin
                                                          (setref! (apply-env-ref env id) new-val)
                                                          new-val)
                                                        (eopl:error 'eval-expression
-                                                                   "Tipo incompatible en la asignacion de ~s" id)))))
+                                                                   "Tipo incompatible en la asignacion de ~s: se esperaba ~s y se recibio ~s"
+                                                                   id (type->symbol var-type) (value->type-symbol new-val))))))
                                     (else
                                      (eopl:error 'eval-expression
                                                  "El lado izquierdo de -> debe ser una variable: ~s" exp1))))
@@ -338,28 +353,100 @@
   (lambda (decl env)
     (cases expression decl
       (var-mut (type id exp)
-               (let ((val (eval-expression exp env)))
+               (let ((val (coerce-value type (eval-expression exp env))))
                  (if (validate-type type val)
                      (extend-env (list id) (list type) (list #f) (list val) env)
-                     (eopl:error 'eval-decl
-                                 "Tipo incompatible en la declaracion de ~s" id))))
+                     (eopl:error 'eval-decl "Tipo incompatible en la declaracion de ~s: se esperaba ~s y se recibio ~s"
+                                 id (type->symbol type) (value->type-symbol val)))))
       (var-inmut (type id exp)
-                 (let ((val (eval-expression exp env)))
+                 (let ((val (coerce-value type (eval-expression exp env))))
                    (if (validate-type type val)
                        (extend-env (list id) (list type) (list #t) (list val) env)
-                       (eopl:error 'eval-decl
-                                   "Tipo incompatible en la declaracion const de ~s" id))))
+                       (eopl:error 'eval-decl "Tipo incompatible en la declaracion const de ~s: se esperaba ~s y se recibio ~s"
+                                   id (type->symbol type) (value->type-symbol val)))))
       (proc-exp (id types ids body)
                 (extend-env-rec (list id) (list ids) (list body) env))
       (else
-       (eopl:error 'eval-decl
-                   "Declaracion no valida: ~s" decl)))))
+       (eopl:error 'eval-decl "Declaracion no valida: ~s" decl)))))
 
-;validación temporal
+;******************************************************************************************
+;Sistema de tipos primitivos y validación parcial
+
+;Valida que un valor sea compatible con un tipo declarado.
 (define validate-type
   (lambda (type val)
-    #t))
+    (cases type-exp type
+      (int-type ()    (and (number? val) (exact? val) (integer? val)))
+      (float-type ()  (number? val))
+      (string-type () (string? val))
+      (bool-type ()   (boolean? val))
+      (void-type ()   #t)
+      (sat-type ()    #t)
+      (list-type (t)  #t)
+      (vector-type (t) #t)
+      (dict-type (k v) #t))))
 
+;Si la variable es float y el valor es un número exacto como 20 lo vuelve flotante como 20.0 sino devuelve el mismo valor
+
+(define coerce-value
+  (lambda (type val)
+    (cases type-exp type
+      (float-type ()
+                  (if (and (number? val) (exact? val))
+                      (exact->inexact val)
+                      val))
+      (else val))))
+
+;Nombre legible de un tipo declarado (para mensajes de error)
+(define type->symbol
+  (lambda (type)
+    (cases type-exp type
+      (int-type ()    'int)
+      (float-type ()  'float)
+      (string-type () 'string)
+      (bool-type ()   'bool)
+      (void-type ()   'void)
+      (sat-type ()    'sat)
+      (list-type (t)  'list)
+      (vector-type (t) 'vector)
+      (dict-type (k v) 'dict))))
+
+;Nombre legible del tipo de un valor en ejecución (para mensajes de error)
+(define value->type-symbol
+  (lambda (val)
+    (cond
+      ((boolean? val) 'bool)
+      ((string? val) 'string)
+      ((and (number? val) (exact? val) (integer? val)) 'int)
+      ((number? val) 'float)
+      (else 'otro))))
+
+;Cadenas y salida
+(define value->text
+  (lambda (val)
+    (cond
+      ((eq? val #t) "True")
+      ((eq? val #f) "False")
+      ((string? val) val)
+      ((number? val) (number->string val))
+      (else "<valor>"))))
+
+(define apply-fun-primitive
+  (lambda (prim args)
+    (cases fun-primitive prim
+      (longitud-prim ()
+                     (if (and (= (length args) 1) (string? (car args)))
+                         (string-length (car args))
+                         (eopl:error 'longitud "Espera exactamente una cadena")))
+      (concatenar-prim ()
+                       (if (and (= (length args) 2) (string? (car args)) (string? (cadr args)))
+                           (string-append (car args) (cadr args))
+                           (eopl:error 'concatenar "Espera exactamente 2 cadenas")))
+      (print-prim ()
+                  (begin
+                    (for-each (lambda (a) (display (value->text a))) args)
+                    (newline)
+                    'nulo)))))
 
 ;******************************************************************************************
 ;Pruebas
@@ -439,3 +526,78 @@
      }
    }"))
 |#
+
+;Prueba 5: tipos validos, int convertido a float, void que cambia de tipo y que retorna 7.0
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     float a = 20;
+     const float pi = 3.14;
+     string s = \"hola mundo\";
+     bool b = True;
+     void v = 5;
+   }
+   PROGRAM {
+     proc main() {
+       return LOCALS {
+         int z = 1;
+       } {
+         (v -> \"ahora soy texto\");
+         (a -> 7);
+         a;
+       }
+     }
+   }"))
+
+;Prueba 6: cadenas y print. Imprime 'Texto: Hola mundo' y 'Longitud: 10' y que retorna 10
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     int n = 0;
+   }
+   PROGRAM {
+     proc main() {
+       return LOCALS {
+         string s = concatenar(\"Hola \", \"mundo\");
+       } {
+         print(\"Texto: \", s);
+         print(\"Longitud: \", longitud(s));
+         longitud(s);
+       }
+     }
+   }"))
+
+;Prueba 7 Error esperado: asignar un tipo distinto a una variable bool
+;Retorna Error: "Tipo incompatible en la asignacion de b: se esperaba bool y se recibio int"
+#|
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     bool b = True;
+   }
+   PROGRAM {
+     proc main() {
+       return LOCALS {
+         int z = 1;
+       } {
+         (b -> 5);
+       }
+     }
+   }"))
+|#
+
+;Prueba 8 Error esperado: declarar un int con valor float
+;Retorna Error: "Tipo incompatible en la declaracion de x : se esperaba int y se recibio float"
+#|
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     int x = 3.5;
+   }
+   PROGRAM {
+     proc main() {
+       return 1
+     }
+   }"))
+|#
+
