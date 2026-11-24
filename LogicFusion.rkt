@@ -199,6 +199,8 @@
            (iota len) idss bodies)
           env)))))
 
+
+
 (define iota
   (lambda (end)
   (let loop ((next 0))
@@ -524,3 +526,78 @@
      }
    }"))
 |#
+
+;Prueba 5: tipos validos, int convertido a float, void que cambia de tipo y que retorna 7.0
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     float a = 20;
+     const float pi = 3.14;
+     string s = \"hola mundo\";
+     bool b = True;
+     void v = 5;
+   }
+   PROGRAM {
+     proc main() {
+       return LOCALS {
+         int z = 1;
+       } {
+         (v -> \"ahora soy texto\");
+         (a -> 7);
+         a;
+       }
+     }
+   }"))
+
+;Prueba 6: cadenas y print. Imprime 'Texto: Hola mundo' y 'Longitud: 10' y que retorna 10
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     int n = 0;
+   }
+   PROGRAM {
+     proc main() {
+       return LOCALS {
+         string s = concatenar(\"Hola \", \"mundo\");
+       } {
+         print(\"Texto: \", s);
+         print(\"Longitud: \", longitud(s));
+         longitud(s);
+       }
+     }
+   }"))
+
+;Prueba 7 Error esperado: asignar un tipo distinto a una variable bool
+;Retorna Error: "Tipo incompatible en la asignacion de b: se esperaba bool y se recibio int"
+#|
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     bool b = True;
+   }
+   PROGRAM {
+     proc main() {
+       return LOCALS {
+         int z = 1;
+       } {
+         (b -> 5);
+       }
+     }
+   }"))
+|#
+
+;Prueba 8 Error esperado: declarar un int con valor float
+;Retorna Error: "Tipo incompatible en la declaracion de x : se esperaba int y se recibio float"
+#|
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     int x = 3.5;
+   }
+   PROGRAM {
+     proc main() {
+       return 1
+     }
+   }"))
+|#
+
