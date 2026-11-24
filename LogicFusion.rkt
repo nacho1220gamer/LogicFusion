@@ -341,6 +341,21 @@
                      (else
                       (eopl:error 'eval-expression
                                   "Primitiva no encontrada: ~s" prim))))
+      (block-exp (exps)
+           (if (null? exps)
+               'nulo
+               (let loop ((acc (eval-expression (car exps) env))
+                          (rest (cdr exps)))
+                 (if (null? rest)
+                     acc
+                     (loop (eval-expression (car rest) env)
+                           (cdr rest))))))
+      (proc-exp (id types ids body)
+          (closure ids body env))
+      (if-exp (test-exp true-exp false-exp)
+        (if (eval-expression test-exp env)
+            (eval-expression true-exp env)
+            (eval-expression false-exp env)))
       (else
        (eopl:error 'eval-expression
                    "Expresion no definida: ~s" exp)))))
