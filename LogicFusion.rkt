@@ -318,29 +318,68 @@
                                   (loop (eval-expression (car exps) local-env)
                                         (cdr exps))))))))
       (primapp-exp (exp1 prim exp2)
-                   (cases primitive prim
-                     (assign-prim ()
-                                  (cases expression exp1
-                                    (var-exp (id v-prim)
-                                             (if (apply-env-const? env id)
+             (cases primitive prim
+               (assign-prim ()
+                            (cases expression exp1
+                              (var-exp (id v-prim)
+                                       (if (apply-env-const? env id)
+                                           (eopl:error 'eval-expression
+                                                       "No se puede modificar la constante: ~s" id)
+                                           (let* ((var-type (apply-env-type env id))
+                                                  (new-val (coerce-value var-type
+                                                                         (eval-expression exp2 env))))
+                                             (if (validate-type var-type new-val)
+                                                 (begin
+                                                   (setref! (apply-env-ref env id) new-val)
+                                                   new-val)
                                                  (eopl:error 'eval-expression
-                                                             "No se puede modificar la constante: ~s" id)
-                                                 (let* ((var-type (apply-env-type env id))
-                                                        (new-val (coerce-value var-type
-                                                                               (eval-expression exp2 env))))
-                                                   (if (validate-type var-type new-val)
-                                                       (begin
-                                                         (setref! (apply-env-ref env id) new-val)
-                                                         new-val)
-                                                       (eopl:error 'eval-expression
-                                                                   "Tipo incompatible en la asignacion de ~s: se esperaba ~s y se recibio ~s"
-                                                                   id (type->symbol var-type) (value->type-symbol new-val))))))
-                                    (else
-                                     (eopl:error 'eval-expression
-                                                 "El lado izquierdo de -> debe ser una variable: ~s" exp1))))
-                     (else
-                      (eopl:error 'eval-expression
-                                  "Primitiva no encontrada: ~s" prim))))
+                                                             "Tipo incompatible en la asignacion de ~s: se esperaba ~s y se recibio ~s"
+                                                             id (type->symbol var-type) (value->type-symbol new-val))))))
+                              (else
+                               (eopl:error 'eval-expression
+                                           "El lado izquierdo de -> debe ser una variable: ~s" exp1))))
+               (else
+                (let ((v1 (eval-expression exp1 env))
+                      (v2 (eval-expression exp2 env)))
+                  (cases primitive prim
+                    (add-prim ()
+                              (if (and (number? v1) (number? v2))
+                                  (+ v1 v2)
+                                  (eopl:error 'eval-expression "Operandos no numericos en +")))
+                    (sub-prim ()
+                              (if (and (number? v1) (number? v2))
+                                  (- v1 v2)
+                                  (eopl:error 'eval-expression "Operandos no numericos en -")))
+                    (mult-prim ()
+                               (if (and (number? v1) (number? v2))
+                                   (* v1 v2)
+                                   (eopl:error 'eval-expression "Operandos no numericos en *")))
+                    (div-prim ()
+                              (if (and (number? v1) (number? v2))
+                                  (if (zero? v2)
+                                      (eopl:error 'eval-expression "Division por cero")
+                                      (/ v1 v2))
+                                  (eopl:error 'eval-expression "Operandos no numericos en /")))
+                    (eq-prim ()        (equal? v1 v2))
+                    (dif-prim ()       (not (equal? v1 v2)))
+                    (greater-prim ()
+                                  (if (and (number? v1) (number? v2))
+                                      (> v1 v2)
+                                      (eopl:error 'eval-expression "Operandos no numericos en >")))
+                    (less-prim ()
+                               (if (and (number? v1) (number? v2))
+                                   (< v1 v2)
+                                   (eopl:error 'eval-expression "Operandos no numericos en <")))
+                    (greater-eq-prim ()
+                                     (if (and (number? v1) (number? v2))
+                                         (>= v1 v2)
+                                         (eopl:error 'eval-expression "Operandos no numericos en >=")))
+                    (less-eq-prim ()
+                                  (if (and (number? v1) (number? v2))
+                                      (<= v1 v2)
+                                      (eopl:error 'eval-expression "Operandos no numericos en <=")))
+                    (else
+                     (eopl:error 'eval-expression "Primitiva no reconocida")))))))
       (block-exp (exps)
            (if (null? exps)
                'nulo
