@@ -685,4 +685,64 @@
      }
    }"))
 |#
+;Prueba 9: BLOCK evalua secuencialmente y retorna la ultima expresion (True)
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     int a = 10;
+   }
+   PROGRAM {
+     proc main() {
+       return BLOCK {
+         (20.5 * 2);
+         ((100 / 4) - 3);
+         (a == 10);
+       }
+     }
+   }"))
 
+;Prueba 10: Operaciones relacionales dentro de BLOCK. Retorna False
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     int x = 5;
+   }
+   PROGRAM {
+     proc main() {
+       return BLOCK {
+         (x > 3);
+         (x != 5);
+       }
+     }
+   }"))
+
+;Prueba 11: Llamada a procedimiento con var-prim. Retorna 17
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     int x = 7;
+     proc sumar = lambda(int a, int b) {
+       return (a + b)
+     };
+   }
+   PROGRAM {
+     proc main() {
+       return BLOCK {
+         (sumar(x, 3) + x);
+       }
+     }
+   }"))
+
+;Prueba 12: Procedimiento recursivo factorial. Retorna 120
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     proc factorial = lambda(int n) {
+       return if ((n == 0)) { 1 } else { (n * factorial((n - 1))) }
+     };
+   }
+   PROGRAM {
+     proc main() {
+       return factorial(5)
+     }
+   }"))
