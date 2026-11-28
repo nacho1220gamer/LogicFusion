@@ -475,6 +475,14 @@
 ;******************************************************************************************
 ;Sistema de tipos primitivos y validación parcial
 
+;Auxiliar para verificar que todos los elementos de una lista cumplan una condicion
+(define all-elements-valid?
+  (lambda (pred lst)
+    (cond
+      ((null? lst) #t)
+      ((pred (car lst)) (all-elements-valid? pred (cdr lst)))
+      (else #f))))
+
 ;Valida que un valor sea compatible con un tipo declarado.
 (define validate-type
   (lambda (type val)
@@ -485,9 +493,22 @@
       (bool-type ()   (boolean? val))
       (void-type ()   #t)
       (sat-type ()    #t)
-      (list-type (t)  #t)
-      (vector-type (t) #t)
-      (dict-type (k v) #t))))
+      (list-type (t)
+                 (and (list? val)
+                      (all-elements-valid? (lambda (elem) (validate-type t elem)) val)))
+      (vector-type (t)
+                   (and (vector? val)
+                        (all-elements-valid? (lambda (elem) (validate-type t elem))
+                                             (vector->list val))))
+      (dict-type (k v)
+                 (and (dictionary? val)
+                      (cases dictionary val
+                        (a-dict (pairs)
+                                (all-elements-valid?
+                                 (lambda (p)
+                                   (and (validate-type k (car p))
+                                        (validate-type v (cdr p))))
+                                 pairs))))))))
 
 ;Si la variable es float y el valor es un número exacto como 20 lo vuelve flotante como 20.0 sino devuelve el mismo valor
 
@@ -498,6 +519,25 @@
                   (if (and (number? val) (exact? val))
                       (exact->inexact val)
                       val))
+      (list-type (t)
+                 (if (list? val)
+                     (map (lambda (elem) (coerce-value t elem)) val)
+                     val))
+      (vector-type (t)
+                   (if (vector? val)
+                       (list->vector
+                        (map (lambda (elem) (coerce-value t elem)) (vector->list val)))
+                       val))
+      (dict-type (k v)
+                 (if (dictionary? val)
+                     (cases dictionary val
+                       (a-dict (pairs)
+                               (a-dict
+                                (map (lambda (p)
+                                       (cons (coerce-value k (car p))
+                                             (coerce-value v (cdr p))))
+                                     pairs))))
+                     val))
       (else val))))
 
 ;Nombre legible de un tipo declarado (para mensajes de error)
@@ -522,6 +562,9 @@
       ((string? val) 'string)
       ((and (number? val) (exact? val) (integer? val)) 'int)
       ((number? val) 'float)
+      ((list? val) 'list)
+      ((vector? val) 'vector)
+      ((dictionary? val) 'dict)
       (else 'otro))))
 
 ;Cadenas y salida
@@ -532,6 +575,35 @@
       ((eq? val #f) "False")
       ((string? val) val)
       ((number? val) (number->string val))
+      ((list? val)
+       (string-append "("
+                      (let loop ((l val))
+                        (cond
+                          ((null? l) "")
+                          ((null? (cdr l)) (value->text (car l)))
+                          (else (string-append (value->text (car l)) " " (loop (cdr l))))))
+                      ")"))
+      ((vector? val)
+       (string-append "["
+                      (let loop ((l (vector->list val)))
+                        (cond
+                          ((null? l) "")
+                          ((null? (cdr l)) (value->text (car l)))
+                          (else (string-append (value->text (car l)) ", " (loop (cdr l))))))
+                      "]"))
+      ((dictionary? val)
+       (cases dictionary val
+         (a-dict (pairs)
+                 (string-append "{"
+                                (let loop ((ps pairs))
+                                  (cond
+                                    ((null? ps) "")
+                                    ((null? (cdr ps))
+                                     (string-append (value->text (caar ps)) ": " (value->text (cdar ps))))
+                                    (else
+                                     (string-append (value->text (caar ps)) ": " (value->text (cdar ps))
+                                                    ", " (loop (cdr ps))))))
+                                "}"))))
       (else "<valor>"))))
 
 ;******************************************************************************************
@@ -1029,3 +1101,76 @@
        return factorial(5)
      }
    }"))
+
+;Prueba 13: Listas inmutables (empty, make-list, head, tail, append, ref-list, length)
+;Retorna 40
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     list<int> base = '(20, 30);
+   }
+   PROGRAM {
+     proc main() {
+       return LOCALS {
+         list<int> l1 = make-list(10, base);
+         list<int> l2 = append(l1, make-list(40, empty));
+       } {
+         head(l2);
+         tail(l2);
+         length(l2);
+         ref-list(l2, 3);
+       }
+     }
+   }"))
+
+;Prueba 14: Vectores mutables y diccionarios (set-vector, append-vector, delete-val-vector, set-dict, ref-dict)
+;Retorna 95
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     vector<int> notas = [70, 80, 90];
+     dict<string, int> edades = {\"Ana\": 25};
+   }
+   PROGRAM {
+     proc main() {
+       return BLOCK {
+         set-vector(notas, 1, 85);
+         append-vector(notas, 100);
+         delete-val-vector(notas, 0);
+         set-dict(edades, \"Luis\", 10);
+         (ref-vector(notas, 0) + ref-dict(edades, \"Luis\"));
+       }
+     }
+   }"))
+
+;Prueba 15 Error esperado: Intentar mutar un vector declarado como const
+;Retorna Error: "No se puede modificar la estructura constante: fijos"
+#|
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     const vector<int> fijos = [1, 2, 3];
+   }
+   PROGRAM {
+     proc main() {
+       return BLOCK {
+         set-vector(fijos, 0, 99);
+       }
+     }
+   }"))
+|#
+
+;Prueba 16 Error esperado: Tipo incompatible en coleccion (list<int> con string)
+;Retorna Error: "Tipo incompatible en la declaracion de malos: se esperaba list y se recibio list"
+#|
+(eval-program
+ (scan&parse
+  "GLOBALS {
+     list<int> malos = '(1, \"dos\", 3);
+   }
+   PROGRAM {
+     proc main() {
+       return 1
+     }
+   }"))
+|#
