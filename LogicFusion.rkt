@@ -316,9 +316,8 @@
       (text-exp (txt) (substring txt 1 (- (string-length txt) 1)))
       (true-exp () #t)
       (false-exp () #f)
-      (primfun-exp (prim args)
-                   (apply-fun-primitive prim
-                                        (map (lambda (a) (eval-expression a env)) args)))
+     (primfun-exp (prim args)
+                   (apply-fun-primitive prim args env))
       (var-exp (id v-prim)
                (cases var-prim v-prim
                  (simple-var () (apply-env env id))
@@ -421,6 +420,15 @@
         (if (eval-expression test-exp env)
             (eval-expression true-exp env)
             (eval-expression false-exp env)))
+      (empty-exp () '())
+      (list-exp (exps)
+                (map (lambda (e) (eval-expression e env)) exps))
+      (vector-exp (exps)
+                  (list->vector (map (lambda (e) (eval-expression e env)) exps)))
+      (dict-exp (keys vals)
+                (build-dict
+                 (map (lambda (k) (eval-expression k env)) keys)
+                 (map (lambda (v) (eval-expression v env)) vals)))
       (else
        (eopl:error 'eval-expression
                    "Expresion no definida: ~s" exp)))))
@@ -526,22 +534,271 @@
       ((number? val) (number->string val))
       (else "<valor>"))))
 
+;******************************************************************************************
+;Estructuras de Datos (Listas, Vectores y Diccionarios)
+
+;Tipo de dato diccionario
+(define-datatype dictionary dictionary?
+  (a-dict (pairs (list-of pair?))))
+
+;Construye un diccionario a partir de una lista de claves y una de valores
+(define build-dict
+  (lambda (keys vals)
+    (let loop ((ks keys) (vs vals) (res '()))
+      (if (null? ks)
+          (a-dict (reverse res))
+          (loop (cdr ks)
+                (cdr vs)
+                (put-pair res (car ks) (car vs)))))))
+
+;Inserta o actualiza una clave en una lista de pares (claves unicas)
+(define put-pair
+  (lambda (lst k v)
+    (cond
+      ((null? lst) (list (cons k v)))
+      ((equal? (caar lst) k) (cons (cons k v) (cdr lst)))
+      (else (cons (car lst) (put-pair (cdr lst) k v))))))
+
+;Busca una clave en el diccionario
+(define lookup-dict
+  (lambda (dict k)
+    (cases dictionary dict
+      (a-dict (pairs)
+              (let ((entry (assoc k pairs)))
+                (if entry
+                    (cdr entry)
+                    (eopl:error 'ref-dict "Clave no encontrada en el diccionario: ~s" k)))))))
+
+;Actualiza o agrega una clave en el diccionario
+(define update-dict
+  (lambda (dict k v)
+    (cases dictionary dict
+      (a-dict (pairs)
+              (a-dict (put-pair pairs k v))))))
+
+;Funciones auxiliares para vectores
+(define check-index
+  (lambda (who idx len)
+    (if (and (integer? idx) (exact? idx) (>= idx 0) (< idx len))
+        #t
+        (eopl:error who "Indice fuera de rango: ~s" idx))))
+
+(define add-to-vector
+  (lambda (vec val)
+    (list->vector (append (vector->list vec) (list val)))))
+
+(define remove-from-vector
+  (lambda (vec idx)
+    (let loop ((lst (vector->list vec)) (i 0) (res '()))
+      (cond
+        ((null? lst) (list->vector (reverse res)))
+        ((= i idx) (loop (cdr lst) (+ i 1) res))
+        (else (loop (cdr lst) (+ i 1) (cons (car lst) res)))))))
+
+(define insert-into-vector
+  (lambda (vec idx val)
+    (let loop ((lst (vector->list vec)) (i 0) (res '()))
+      (cond
+        ((= i idx) (list->vector (append (reverse res) (list val) lst)))
+        ((null? lst) (list->vector (reverse (cons val res))))
+        (else (loop (cdr lst) (+ i 1) (cons (car lst) res)))))))
+
+;Valida que el nuevo elemento cumpla el tipo T de vector<T> (si viene de una variable)
+(define check-vector-elem-type
+  (lambda (target-exp val env who)
+    (cases expression target-exp
+      (var-exp (id v-prim)
+               (let ((t (apply-env-type env id)))
+                 (cases type-exp t
+                   (vector-type (elem-type)
+                                (if (validate-type elem-type val)
+                                    #t
+                                    (eopl:error who "Tipo incompatible al modificar el vector ~s" id)))
+                   (void-type () #t)
+                   (else #t))))
+      (else #t))))
+
+;Valida que clave y valor cumplan K y V de dict<K, V> (si viene de una variable)
+(define check-dict-entry-type
+  (lambda (target-exp k v env who)
+    (cases expression target-exp
+      (var-exp (id v-prim)
+               (let ((t (apply-env-type env id)))
+                 (cases type-exp t
+                   (dict-type (key-type val-type)
+                              (if (and (validate-type key-type k)
+                                       (validate-type val-type v))
+                                  #t
+                                  (eopl:error who "Tipo incompatible de clave o valor en el diccionario ~s" id)))
+                   (void-type () #t)
+                   (else #t))))
+      (else #t))))
+
+;Verifica que la variable no sea const y actualiza su referencia en el ambiente
+(define save-if-variable!
+  (lambda (target-exp new-val env who)
+    (cases expression target-exp
+      (var-exp (id v-prim)
+               (if (apply-env-const? env id)
+                   (eopl:error who "No se puede modificar la estructura constante: ~s" id)
+                   (begin
+                     (setref! (apply-env-ref env id) new-val)
+                     new-val)))
+      (else new-val))))
+
+
 (define apply-fun-primitive
-  (lambda (prim args)
-    (cases fun-primitive prim
-      (longitud-prim ()
-                     (if (and (= (length args) 1) (string? (car args)))
-                         (string-length (car args))
-                         (eopl:error 'longitud "Espera exactamente una cadena")))
-      (concatenar-prim ()
-                       (if (and (= (length args) 2) (string? (car args)) (string? (cadr args)))
-                           (string-append (car args) (cadr args))
-                           (eopl:error 'concatenar "Espera exactamente 2 cadenas")))
-      (print-prim ()
-                  (begin
-                    (for-each (lambda (a) (display (value->text a))) args)
-                    (newline)
-                    'nulo)))))
+  (lambda (prim raw-args env)
+    (let ((args (map (lambda (a) (eval-expression a env)) raw-args)))
+      (cases fun-primitive prim
+        (longitud-prim ()
+                       (if (and (= (length args) 1) (string? (car args)))
+                           (string-length (car args))
+                           (eopl:error 'longitud "Espera exactamente una cadena")))
+        (concatenar-prim ()
+                         (if (and (= (length args) 2) (string? (car args)) (string? (cadr args)))
+                             (string-append (car args) (cadr args))
+                             (eopl:error 'concatenar "Espera exactamente 2 cadenas")))
+        (print-prim ()
+                    (begin
+                      (for-each (lambda (a) (display (value->text a))) args)
+                      (newline)
+                      'nulo))
+        (empty?-prim ()
+                     (if (and (= (length args) 1) (list? (car args)))
+                         (null? (car args))
+                         (eopl:error 'empty? "Espera una lista")))
+        (list?-prim ()
+                    (if (= (length args) 1)
+                        (list? (car args))
+                        (eopl:error 'list? "Espera un argumento")))
+        (make-list-prim ()
+                        (if (and (= (length args) 2) (list? (cadr args)))
+                            (cons (car args) (cadr args))
+                            (eopl:error 'make-list "Espera un elemento y una lista")))
+        (head-prim ()
+                   (if (and (= (length args) 1) (list? (car args)))
+                       (if (null? (car args))
+                           (eopl:error 'head "La lista esta vacia")
+                           (caar args))
+                       (eopl:error 'head "Espera una lista")))
+        (tail-prim ()
+                   (if (and (= (length args) 1) (list? (car args)))
+                       (if (null? (car args))
+                           (eopl:error 'tail "La lista esta vacia")
+                           (cdar args))
+                       (eopl:error 'tail "Espera una lista")))
+        (append-prim ()
+                     (if (and (= (length args) 2) (list? (car args)) (list? (cadr args)))
+                         (append (car args) (cadr args))
+                         (eopl:error 'append "Espera 2 listas")))
+        (ref-list-prim ()
+                       (if (and (= (length args) 2) (list? (car args)))
+                           (begin
+                             (check-index 'ref-list (cadr args) (length (car args)))
+                             (list-ref (car args) (cadr args)))
+                           (eopl:error 'ref-list "Espera una lista y un indice")))
+        (length-prim ()
+                     (if (and (= (length args) 1) (list? (car args)))
+                         (length (car args))
+                         (eopl:error 'length "Espera una lista")))
+        (vector?-prim ()
+                      (if (= (length args) 1)
+                          (vector? (car args))
+                          (eopl:error 'vector? "Espera un argumento")))
+        (make-vector-prim ()
+                          (cond
+                            ((and (= (length args) 1) (integer? (car args)) (>= (car args) 0))
+                             (make-vector (car args) 0))
+                            ((and (= (length args) 2) (integer? (car args)) (>= (car args) 0))
+                             (make-vector (car args) (cadr args)))
+                            (else
+                             (eopl:error 'make-vector "Argumentos invalidos"))))
+        (ref-vector-prim ()
+                         (if (and (= (length args) 2) (vector? (car args)))
+                             (begin
+                               (check-index 'ref-vector (cadr args) (vector-length (car args)))
+                               (vector-ref (car args) (cadr args)))
+                             (eopl:error 'ref-vector "Espera un vector y un indice")))
+        (set-vector-prim ()
+                         (if (and (= (length args) 3) (vector? (car args)))
+                             (let ((vec (car args))
+                                   (idx (cadr args))
+                                   (val (caddr args)))
+                               (check-index 'set-vector idx (vector-length vec))
+                               (check-vector-elem-type (car raw-args) val env 'set-vector)
+                               (save-if-variable! (car raw-args) vec env 'set-vector)
+                               (vector-set! vec idx val)
+                               vec)
+                             (eopl:error 'set-vector "Espera un vector, un indice y un valor")))
+        (append-vector-prim ()
+                            (if (and (= (length args) 2) (vector? (car args)))
+                                (let ((vec (car args))
+                                      (val (cadr args)))
+                                  (check-vector-elem-type (car raw-args) val env 'append-vector)
+                                  (let ((new-vec (add-to-vector vec val)))
+                                    (save-if-variable! (car raw-args) new-vec env 'append-vector)))
+                                (eopl:error 'append-vector "Espera un vector y un valor")))
+        (delete-val-vector-prim ()
+                                (if (and (= (length args) 2) (vector? (car args)))
+                                    (let ((vec (car args))
+                                          (idx (cadr args)))
+                                      (check-index 'delete-val-vector idx (vector-length vec))
+                                      (let ((new-vec (remove-from-vector vec idx)))
+                                        (save-if-variable! (car raw-args) new-vec env 'delete-val-vector)))
+                                    (eopl:error 'delete-val-vector "Espera un vector y un indice")))
+        (insert-val-vector-prim ()
+                                (if (and (= (length args) 3) (vector? (car args)))
+                                    (let* ((vec (car args))
+                                           (idx (cadr args))
+                                           (val (caddr args))
+                                           (len (vector-length vec)))
+                                      (if (and (integer? idx) (exact? idx) (>= idx 0) (<= idx len))
+                                          (begin
+                                            (check-vector-elem-type (car raw-args) val env 'insert-val-vector)
+                                            (let ((new-vec (insert-into-vector vec idx val)))
+                                              (save-if-variable! (car raw-args) new-vec env 'insert-val-vector)))
+                                          (eopl:error 'insert-val-vector "Indice fuera de rango: ~s" idx)))
+                                    (eopl:error 'insert-val-vector "Espera un vector, un indice y un valor")))
+        (create-dict-prim ()
+                          (cond
+                            ((null? args) (a-dict '()))
+                            ((and (= (length args) 2) (list? (car args)) (list? (cadr args))
+                                  (= (length (car args)) (length (cadr args))))
+                             (build-dict (car args) (cadr args)))
+                            (else
+                             (eopl:error 'create-dict "Argumentos invalidos para diccionario"))))
+        (dict?-prim ()
+                    (if (= (length args) 1)
+                        (dictionary? (car args))
+                        (eopl:error 'dict? "Espera un argumento")))
+        (ref-dict-prim ()
+                       (if (and (= (length args) 2) (dictionary? (car args)))
+                           (lookup-dict (car args) (cadr args))
+                           (eopl:error 'ref-dict "Espera un diccionario y una clave")))
+        (set-dict-prim ()
+                       (if (and (= (length args) 3) (dictionary? (car args)))
+                           (let ((dict (car args))
+                                 (k (cadr args))
+                                 (v (caddr args)))
+                             (check-dict-entry-type (car raw-args) k v env 'set-dict)
+                             (let ((new-dict (update-dict dict k v)))
+                               (save-if-variable! (car raw-args) new-dict env 'set-dict)))
+                           (eopl:error 'set-dict "Espera un diccionario, una clave y un valor")))
+        (keys-prim ()
+                   (if (and (= (length args) 1) (dictionary? (car args)))
+                       (cases dictionary (car args)
+                         (a-dict (pairs) (map car pairs)))
+                       (eopl:error 'keys "Espera un diccionario")))
+        (values-prim ()
+                     (if (and (= (length args) 1) (dictionary? (car args)))
+                         (cases dictionary (car args)
+                           (a-dict (pairs) (map cdr pairs)))
+                         (eopl:error 'values "Espera un diccionario")))
+
+        (else
+         (eopl:error 'apply-fun-primitive "Primitiva no definida: ~s" prim))
+        ))))
 ;*******************************************************************************************
 ;Procedimientos
 (define-datatype procval procval?
